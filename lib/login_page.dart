@@ -240,7 +240,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
 
                         if (_loginError != null) ...[
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                           Text(
                             _loginError!,
                             textAlign: TextAlign.center,

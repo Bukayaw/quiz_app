@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -206,6 +207,31 @@ class _DashboardPageState extends State<DashboardPage> {
                 itemBuilder: (context, index) =>
                     _MetricCard(metric: cards[index]),
               ),
+              const SizedBox(height: 24),
+              LayoutBuilder(
+                builder: (context, chartConstraints) {
+                  final pieChart = _PassFailChart(
+                    passed: _metricCount(stats['passed_students']),
+                    failed: _metricCount(stats['failed_students']),
+                  );
+                  final barChart = _MetricsBarChart(metrics: cards);
+
+                  if (chartConstraints.maxWidth >= 850) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: pieChart),
+                        const SizedBox(width: 16),
+                        Expanded(child: barChart),
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    children: [pieChart, const SizedBox(height: 16), barChart],
+                  );
+                },
+              ),
             ],
           ),
         );
@@ -228,6 +254,261 @@ class _DashboardMetric {
   final IconData icon;
   final Color color;
   final Color backgroundColor;
+}
+
+int _metricCount(dynamic value) => value is num ? value.toInt() : 0;
+
+class _PassFailChart extends StatelessWidget {
+  const _PassFailChart({required this.passed, required this.failed});
+
+  final int passed;
+  final int failed;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = passed + failed;
+    const passedColor = Colors.green;
+    const failedColor = Colors.deepOrange;
+
+    return _ChartCard(
+      title: 'Exam Results',
+      subtitle: 'Latest completed result per student',
+      child: Column(
+        children: [
+          SizedBox(
+            height: 190,
+            width: 190,
+            child: Semantics(
+              label: 'Exam results: $passed passed, $failed failed',
+              child: CustomPaint(
+                painter: _PieChartPainter(
+                  passed: passed,
+                  failed: failed,
+                  passedColor: passedColor,
+                  failedColor: failedColor,
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$total',
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'students',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _ChartLegendItem(
+                color: passedColor,
+                label: 'Passed',
+                value: passed,
+              ),
+              const SizedBox(width: 24),
+              _ChartLegendItem(
+                color: failedColor,
+                label: 'Failed',
+                value: failed,
+              ),
+            ],
+          ),
+          if (total == 0) ...[
+            const SizedBox(height: 12),
+            Text(
+              'No completed results yet',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PieChartPainter extends CustomPainter {
+  const _PieChartPainter({
+    required this.passed,
+    required this.failed,
+    required this.passedColor,
+    required this.failedColor,
+  });
+
+  final int passed;
+  final int failed;
+  final Color passedColor;
+  final Color failedColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final strokeWidth = size.width * 0.15;
+    final radius = (size.width - strokeWidth) / 2;
+    final bounds = Rect.fromCircle(center: center, radius: radius);
+    final trackPaint = Paint()
+      ..color = Colors.grey.shade200
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    canvas.drawCircle(center, radius, trackPaint);
+
+    final total = passed + failed;
+    if (total == 0) return;
+
+    final chartPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt;
+    final passedSweep = 2 * math.pi * passed / total;
+
+    chartPaint.color = passedColor;
+    canvas.drawArc(bounds, -math.pi / 2, passedSweep, false, chartPaint);
+
+    chartPaint.color = failedColor;
+    canvas.drawArc(
+      bounds,
+      -math.pi / 2 + passedSweep,
+      2 * math.pi * failed / total,
+      false,
+      chartPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PieChartPainter oldDelegate) =>
+      oldDelegate.passed != passed ||
+      oldDelegate.failed != failed ||
+      oldDelegate.passedColor != passedColor ||
+      oldDelegate.failedColor != failedColor;
+}
+
+class _ChartLegendItem extends StatelessWidget {
+  const _ChartLegendItem({
+    required this.color,
+    required this.label,
+    required this.value,
+  });
+
+  final Color color;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text('$label: $value'),
+      ],
+    );
+  }
+}
+
+class _MetricsBarChart extends StatelessWidget {
+  const _MetricsBarChart({required this.metrics});
+
+  final List<_DashboardMetric> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = metrics.fold<int>(
+      0,
+      (maximum, metric) => _metricCount(metric.value) > maximum
+          ? _metricCount(metric.value)
+          : maximum,
+    );
+
+    return _ChartCard(
+      title: 'Dashboard Metrics',
+      subtitle: 'Comparison of all nine statistics',
+      child: Column(
+        children: [
+          for (final metric in metrics) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    metric.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Colors.grey.shade800),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  _metricCount(metric.value).toString(),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            LinearProgressIndicator(
+              value: maxValue == 0 ? 0 : _metricCount(metric.value) / maxValue,
+              minHeight: 7,
+              borderRadius: BorderRadius.circular(8),
+              color: metric.color,
+              backgroundColor: metric.color.withValues(alpha: 0.14),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChartCard extends StatelessWidget {
+  const _ChartCard({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(subtitle, style: TextStyle(color: Colors.grey.shade700)),
+            const SizedBox(height: 20),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _MetricCard extends StatelessWidget {
